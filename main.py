@@ -3,6 +3,8 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 import gradio as gr
 import torch
 
+device = "cpu"
+
 model_name="EleutherAI/gpt-neo-1.3B"
 model = GPTNeoForCausalLM.from_pretrained(model_name)
 tokenizer = GPT2Tokenizer.from_pretrained(model_name)
@@ -12,13 +14,27 @@ with open("prompt.txt", "r") as file:
 
 print("Initial condition", prompt)
 
-def my_split(s, seps):
-    res = [s]
-    for sep in seps:
-        s, res = res, []
-        for seq in s:
-            res += seq.split(sep)
-    return res
+def parse_text(text):
+    lines = text.split("\n")
+    user_lines = []
+    alice_lines = []
+    current_speaker = ""
+    for line in lines:
+        line = line.strip()
+        if line.startswith("user:"):
+            current_speaker = "user"
+            user_lines.append(line[5:].strip())
+        elif line.startswith("Alice:"):
+            current_speaker = "Alice"
+            alice_lines.append(line[7:].strip())
+        else:
+            if current_speaker == "user":
+                user_lines[-1] = user_lines[-1] + " " + line
+            elif current_speaker == "Alice":
+                alice_lines[-1] = alice_lines[-1] + " " + line
+    return " ".join(user_lines), " ".join(alice_lines)
+
+
 
 def chat_base(input):
   p = prompt + input
@@ -26,22 +42,20 @@ def chat_base(input):
   gen_tokens = model.generate(
     input_ids, 
     do_sample=True, 
-    temperature=0.7,
+    temperature= 0.7,
+    repetition_penalty= 0.7,
     min_length= 30, 
-    max_length= 250)
+    max_length= 200)
   gen_text = tokenizer.batch_decode(gen_tokens)[0]
-  #print(gen_text)
-  result = gen_text[len(p):]   
+  #removes the prompt from the output
+  result = gen_text[len(p):]
   print(">", result)
-  result = my_split(result, [']', '\n'])[1]
-  print(">>", result)
-  if "Alice: " in result:
-   result = result.split("Alice: ")[-1]
-   print(">>>", result)
-  return result
+  user, alice = parse_text(result)
+  print(">>", alice)
+  return alice
 
 
-def chat(message):
+def gradioInterface(message):
     history = gr.get_state() or []
     print(history)
     response = chat_base(message)
